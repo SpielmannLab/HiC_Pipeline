@@ -1,0 +1,78 @@
+################################################
+#
+# This workflow creates supplementary files necessary for using HiCPro.
+# Date: July, 2021
+# Author: Kristin Schultz, k.schultz@uni-luebeck.de
+#
+################################################
+
+
+import os
+    
+configfile: "config.yml"
+
+rule all:
+	input:
+		expand("data/index/{ref}.1.bt2", ref=config['REFERENCE_NAME']),
+		expand("data/{enz}_resfraq_{ref}.bed", ref=config['REFERENCE_NAME'], enz=config['ENZYME']),
+		expand("data/{ref}.sizes", ref=config['REFERENCE_NAME'])
+
+rule link_ref:
+	params:
+		path=config['REFERENCE_FILE'],
+		ref=config['REFERENCE_NAME']
+	output:
+		"data/ref/{ref}.fa"
+	shell:
+		"""
+		ln -s {params.file} {output}
+		"""
+
+rule bwt_index:
+	input:
+		"data/ref/{{ref}}.fa"
+	output:
+		"data/index/{ref}.1.bt2"
+	shell:
+		"""
+		bowtie2-build {input} data/index/{ref}
+		"""
+
+rule samtools_index:
+	input:
+		"data/ref/{ref}.fa"
+	output:
+		"data/ref/{ref}.fa.fai"
+	shell:
+		"""
+		samtools faidx -o {output} {input} 
+		"""
+
+rule ref_fragments:
+	input:
+		"data/ref/{ref}.fa"
+	output:
+		"data/{enz}_resfraq_{ref}.bed"
+	params:
+		motif=config['RES_MOTIF'],
+		utils=config['HICPRO_BIN']
+	shell:
+		"""
+		python3 {params.utils}/digest_genome.py -r {params.motif} -o {output} {input}
+		"""
+
+rule ref_sizes:
+	input:
+		"data/ref/{ref}.fa.fai"
+	output:
+		"data/{ref}.sizes"
+	shell:
+		"""
+		out=$(awk '{{print $1}}' {input} | grep chr)
+		if [[ $out ]] ; then prefix=chr ; fi
+		awk {{'printf ("%s\\t%s\\n", $1, $2)'}} {input} | grep -v _ | sort -k1,1V | head -22 > {output}
+		awk {{'printf ("%s\\t%s\\n", $1, $2)'}} {input} | grep -w ${{prefix}}X >> {output}
+		awk {{'printf ("%s\\t%s\\n", $1, $2)'}} {input} | grep -w ${{prefix}}Y >> {output}
+		awk {{'printf ("%s\\t%s\\n", $1, $2)'}} {input} | grep -w ${{prefix}}M >> {output}
+		"""
+	
