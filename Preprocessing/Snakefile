@@ -55,10 +55,10 @@ rule ref_fragments:
 		"data/{enz}_resfraq_{ref}.bed"
 	params:
 		motif=config['RES_MOTIF'],
-		utils=config['HICPRO_BIN']
+		img=config['HICPRO_IMG']
 	shell:
 		"""
-		python3 {params.utils}/digest_genome.py -r {params.motif} -o {output} {input}
+		singularity exec {params.img} python /HiC-Pro-devel/bin/utils/digest_genome.py -r {params.motif} -o {output} {input}
 		"""
 
 rule ref_sizes:

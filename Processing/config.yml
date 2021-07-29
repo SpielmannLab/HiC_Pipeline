@@ -1,0 +1,13 @@
+HICPRO_CONFIG: "../config-hicpro.txt"
+SAMPLES:
+    - "test"
+SAMPLES_PATH: "mydata/samples/"
+REFERENCE: "hg19"
+RESFRAQ: "../Preprocessing/data/DpnII_resfraq_hg19.bed"
+REF_SIZES: "../Preprocessing/data/hg19.sizes"
+NORM: "KR"
+JUICER_PATH: "mydata/software/juicer_tools_1.22.01.jar"
+SCRATCH: "work/"
+### OUTS can be both "hic_results" and "hic_format" or "hic_results"
+OUTS:
+    - "hic_results"

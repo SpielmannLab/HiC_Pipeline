@@ -1,6 +1,5 @@
 REFERENCE_NAME: "hg19"
-REFERENCE_FILE: "data/hg19/hg19.fa"
+REFERENCE_FILE: "mydata/ref/hg19/hg19.fa"
 ENZYME: "DpnII"
 RES_MOTIF: "^GATC"
 LIGATION_SITE: "GATCGATC"
-HICPRO_BIN: "../supplementaries/hicpro/utils/"

@@ -1,0 +1,139 @@
+################################################
+#
+# This workflow uses HiCPro to align 
+# Date: July, 2021
+# Author: Kristin Schultz, k.schultz@uni-luebeck.de
+#
+################################################
+
+import os
+import shutil
+onsuccess:
+    shutil.rmtree(".snakemake")
+
+configfile: "config.yml"
+
+rule all:
+	input:
+		directory (expand("../samples/{sample}/", sample=config['SAMPLES'])),
+		directory (expand("results/{sample}/data/", sample=config['SAMPLES'])),
+		directory (expand("results/{sample}/{out}/", sample=config['SAMPLES'], out=config['OUTS']))
+
+rule link_sample:
+	output:
+		directory("../samples/{sample}/")
+	params:
+		config['SAMPLES_PATH']
+	shell:
+		"""
+		for f in {params}/{wildcards.sample}/*q.gz ; do ln -s  $f {output} ; done
+		"""
+
+rule split:
+	input:
+		directory("../samples/{sample}/")
+	output:
+		directory("%s/work/{sample}/"%config['SCRATCH'])
+	shell:
+		"""
+		for f in {input}/* 
+		do 
+			singularity exec {params.img} python /HiC-Pro-devel/bin/utils/split_reads.py --results_folder {output} $f 
+		done
+		"""
+
+rule hicpro:
+	input: 
+		expand( ("%s/work/{sample}/"%config['SCRATCH']), sample=config["SAMPLES"])
+	output:
+		bams=directory (expand( "%s/results/bowtie_results/bwt2/{sample}/"%config['SCRATCH'] , sample=config["SAMPLES"])),
+		plots=directory (expand( "%s/results/hic_results/pic/{sample}/"%config['SCRATCH'], sample=config["SAMPLES"])),
+		pairs=directory (expand( "%s/results/hic_results/data/{sample}/"%config['SCRATCH'], sample=config["SAMPLES"]))
+	params:
+		scratch=config['SCRATCH'],
+		hicpro_config=config['HICPRO_CONFIG']
+	shell:
+		"""
+		singularity exec ../imgs/hicpro_latest_ubuntu.img HiC-Pro -i {params.scratch}/work/ -o {params.scratch}/results/ -s mapping  -c {params.hicpro_config} 
+		wait
+		singularity exec ../imgs/hicpro_latest_ubuntu.img HiC-Pro -i {params.scratch}/results/bowtie_results/bwt2/ -o {params.scratch}/results/ -s proc_hic  -c ../config-hicpro.txt 
+		wait
+		singularity exec ../imgs/hicpro_latest_ubuntu.img HiC-Pro -i {params.scratch}/results/bowtie_results/bwt2/ -o {params.scratch}/results/ -s quality_checks  -c ../config-hicpro.txt 
+		wait
+		singularity exec ../imgs/hicpro_latest_ubuntu.img HiC-Pro -i {params.scratch}/results/hic_results/data/ -o {params.scratch}/results/ -s merge_persample -c ../config-hicpro.txt 
+		"""
+
+
+rule mergebam:
+	input:
+		directory("%s/results/bowtie_results/bwt2/{sample}/"%config['SCRATCH'])
+	output:
+		dir=directory("%s/results/merged/{sample}/"%config['SCRATCH'])
+	params:
+		R1="%s/results/merged/{sample}/1_{sample}.bwt2merged.bam"%config['SCRATCH'],
+		R2="%s/results/merged/{sample}/2_{sample}.bwt2merged.bam"%config['SCRATCH'],
+		scratch=config['SCRATCH']
+	shell:
+		"""
+			samtools merge -@ $(nproc) -O bam {params.R1} $(ls {input}/*R1*bwt2merged.bam )
+			samtools merge -@ $(nproc) -O bam {params.R2} $(ls {input}/*R2*bwt2merged.bam )
+			wait
+			rm -r {params.scratch}/results/bowtie_results/bwt2_*/{wildcards.sample}/
+		"""
+
+rule createhics:
+	input:
+		directory("%s/results/hic_results/data/{sample}/"%config['SCRATCH'])
+	output:
+		directory("%s/results/hic_format/{sample}/"%config['SCRATCH'])
+	params:
+		resfraq=config['RESFRAQ'],
+		sizes=config['REF_SIZES'],
+		norm=config['NORM'],
+		ref=config['REFERENCE'],
+		tools=config['JUICER_PATH'],
+		scratch=config['SCRATCH']
+	shell:
+		"""
+		bash ../utils/hicpro2juicebox.sh -o {output} -t {params.scratch}/tmp/ -i {input}{wildcards.sample}.allValidPairs -g {params.sizes} -j {params.tools} 
+		mv {output}/{wildcards.sample}.allValidPairs.hic {output}/{wildcards.sample}_{params.norm}norm_{params.ref}.hic
+		java -jar {params.tools} addNorm -k {params.norm} -w 9000 {output}/{wildcards.sample}_{params.norm}norm_{params.ref}.hic
+		"""
+
+rule copybams:
+	input:
+		directory("%s/results/merged/{sample}/"%config['SCRATCH'])
+	output:
+		directory("results/{sample}/data/")
+	params:
+		scratch=config['SCRATCH']
+	shell:
+		"""
+		cp -r {params.scratch}/results/merged/{wildcards.sample}/* results/{wildcards.sample}/data/
+		wait
+		rm -r {params.scratch}/results/merged/{wildcards.sample}/*
+		"""
+		
+rule copyhicresults:
+	input:
+		directory("%s/results/hic_results/pic/{sample}/"%config['SCRATCH'])
+	output:
+		directory("results/{sample}/hic_results/")
+	params:
+		scratch=config['SCRATCH']
+	shell:
+		"""
+		cp -r {params.scratch}/results/hic_results/*/{wildcards.sample}/* results/{wildcards.sample}/hic_results/
+		"""
+		
+rule copyhicformat:
+	input:
+		directory("%s/results/hic_format/{sample}/"%config['SCRATCH'])
+	output:
+		directory("results/{sample}/hic_format/")
+	params:
+		scratch=config['SCRATCH']
+	shell:
+		"""
+		cp -r {params.scratch}/results/hic_format/{wildcards.sample}/* results/{wildcards.sample}/hic_format/
+		"""
