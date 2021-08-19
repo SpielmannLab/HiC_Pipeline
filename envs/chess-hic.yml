@@ -190,4 +190,3 @@ dependencies:
     - py==1.10.0
     - pytest==6.2.4
     - toml==0.10.2
-prefix: /home/schultz/miniconda3/envs/chess-hic
