@@ -28,3 +28,11 @@ Don't forget to edit the HiCPro configuration. Then run:
 snakemake all --cores $(nproc) 
 ```
 
+### IntraChrAnalysis
+
+This step uses [CHESS](https://github.com/vaquerizaslab/chess) for an automatic feature extraction. We compare a sample / patient and a control data set and look for intrachromosomal differences. Go to the IntraChrAnalysis directory, edit the configuration file and run:
+
+```
+snakemake all --use-conda --cores $(nproc) 
+```
+

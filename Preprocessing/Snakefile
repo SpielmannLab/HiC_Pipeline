@@ -30,7 +30,7 @@ rule link_ref:
 
 rule bwt_index:
 	input:
-		"data/ref/{{ref}}.fa"
+		"data/ref/{ref}.fa"
 	output:
 		"data/index/{ref}.1.bt2"
 	shell:

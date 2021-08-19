@@ -1,0 +1,159 @@
+################################################
+#
+# This workflow uses the tool chess for intra chromosomal analysis of hic data.
+# Date: August, 2021
+# Author: Kristin Schultz, k.schultz@uni-luebeck.de
+#
+################################################
+
+import os
+    
+configfile: "config.yml"
+
+rule all:
+	input:
+		"%s/summary.txt"%config['OUTDIR']
+
+rule chess_pairs:
+	output:
+		"%s/regions.bed"%config['OUTDIR']
+	params:
+		ref=config['REFERENCE_NAME'],
+		win=config['WINDOW_SIZE'],
+		step=config['STEP_SIZE']
+	conda:
+		"../envs/chess-hic.yml"
+	shell:
+		"""
+		chess pairs {params.ref} {params.win} {params.step} {output} 
+		"""
+
+rule chess_sim:
+	input:
+		"%s/regions.bed"%config['OUTDIR']
+	output:
+		"%s/%s_%s.tsv"%(config['OUTDIR'], config['SAMPLE'], config['CONTROL'])
+	params:
+		win=config['WINDOW_SIZE'],
+		step=config['STEP_SIZE'],
+		res=config['RESOLUTION'],
+		obsFile=config['SAMPLE_FILE'],
+		conFile=config['CONTROL_FILE']
+	conda:
+		"../envs/chess-hic.yml"
+	shell:
+		"""
+		chess sim -p $(nproc) {params.obsFile}@{params.res} {params.conFile}@{params.res} \
+		{input} {output}
+		"""
+		
+rule filter_regions:
+	input:
+		regions="%s/regions.bed"%config['OUTDIR'],
+		filtered="%s/%s_%s.tsv"%(config['OUTDIR'], config['SAMPLE'], config['CONTROL'])
+	output:
+		"%s/filtered_regions_%s.tsv"%(config['OUTDIR'], config['WINDOW_SIZE'])
+	params:
+		win=config['WINDOW_SIZE'],
+		outdir=config['OUTDIR'],
+		sn_thr=config['SIM_THRESHOLD'],
+		zsim_thr=config['Z_SIM_THRESHOLD']
+	conda:
+		"../envs/chess-hic.yml"
+	shell:
+		"""
+		regions=$(basename {input.regions})
+		filtered=$(basename {input.filtered})
+		outfile=$(basename {output})
+		cp ../scripts/analyzeCHESS_01.py .
+		ANALYZE=analyzeCHESS_01.py
+		sed -i -r "s|wdir = .*|wdir = '{params.outdir}/'|g" $ANALYZE
+		sed -i -r "s|winsize =.*|winsize = {params.win}|g" $ANALYZE
+		sed -i -r "s|chess_results_file =.*|chess_results_file = '$filtered'|g" $ANALYZE
+		sed -i -r "s|region_pairs =.*|region_pairs = '$regions'|g" $ANALYZE
+		sed -i -r "s|sn_thr = .*|sn_thr = {params.sn_thr}|g" $ANALYZE
+		sed -i -r "s|zsim_thr = .*|zsim_thr = {params.zsim_thr}|g" $ANALYZE
+		python $ANALYZE
+		rm analyzeCHESS_01.py
+		"""
+		
+rule chess_extract:
+	input:
+		"%s/filtered_regions_%s.tsv"%(config['OUTDIR'], config['WINDOW_SIZE'])
+	output:
+		"%s/features/gained_features.tsv"%config['OUTDIR']
+	params:
+		res=config['RESOLUTION'],
+		obsFile=config['SAMPLE_FILE'],
+		conFile=config['CONTROL_FILE'],
+		out="%s/features/"%config['OUTDIR']
+	conda:
+		"../envs/chess-hic.yml"
+	shell:
+		"""
+		chess extract {input} {params.conFile}@{params.res} {params.obsFile}@{params.res} {params.out}
+		"""
+
+rule chess_crosscorrelate:
+	input:
+		gain="%s/features/gained_features.tsv"%config['OUTDIR'],
+		regions="%s/filtered_regions_%s.tsv"%(config['OUTDIR'], config['WINDOW_SIZE'])
+	output:
+		directory("%s/correlations/"%config['OUTDIR'])
+	conda:
+		"../envs/chess-hic.yml"
+	shell:
+		"""
+		chess crosscorrelate {input.gain} {input.regions} {output}
+		"""
+
+rule plot_results:
+	input:
+		regions="%s/regions.bed"%config['OUTDIR'],
+		filtered="%s/%s_%s.tsv"%(config['OUTDIR'], config['SAMPLE'], config['CONTROL']),
+		pairs="%s/%s_%s.tsv"%(config['OUTDIR'], config['SAMPLE'], config['CONTROL']),
+		gain="%s/features/gained_features.tsv"%config['OUTDIR']
+	output:
+		dynamic("%s/plots/{N}_region_with_features.png"%config['OUTDIR'])
+	params:
+		win=config['WINDOW_SIZE'],
+		res=config['RESOLUTION'],
+		obsFile=config['SAMPLE_FILE'],
+		conFile=config['CONTROL_FILE'],
+		numPlots=config['N_PLOTS'],
+		outdir=config['OUTDIR']
+	conda:
+		"../envs/chess-hic.yml"
+	shell:
+		"""
+		regions=$(basename {input.regions})
+		filtered=$(basename {input.filtered})
+		cp ../scripts/analyzeCHESS_02.py .
+		ANALYZE=analyzeCHESS_02.py
+		sed -i -r "s|wdir = .*|wdir = '{params.outdir}/'|g" $ANALYZE
+		sed -i -r "s|winsize =.*|winsize = {params.win}|g" $ANALYZE
+		sed -i -r "s|chess_results_file =.*|chess_results_file = '$filtered'|g" $ANALYZE
+		sed -i -r "s|region_pairs =.*|region_pairs = '$regions'|g" $ANALYZE
+		sed -i -r "s|patient_hic = fanc.load.*|patient_hic = fanc.load('{params.obsFile}@{params.res}')|g" $ANALYZE
+		sed -i -r "s|control_hic = fanc.load.*|control_hic = fanc.load('{params.conFile}@{params.res}')|g" $ANALYZE
+		sed -i -r "s|maxPlots = .*|maxPlots = {params.numPlots}|g" $ANALYZE
+		python $ANALYZE
+		rm analyzeCHESS_02.py
+		"""
+
+rule report:
+	input:
+		dynamic("%s/plots/{N}_region_with_features.png"%config['OUTDIR']),
+		directory("%s/correlations/"%config['OUTDIR'])
+	output:
+		"%s/summary.txt"%config['OUTDIR']
+	conda:
+		"../envs/chess-hic.yml"
+	shell:
+		"""
+		echo "Chess version" $(chess --version) > {output}
+		echo "Processed sample " + config['SAMPLE_FILE'] + " (patient) and sample " + config['CONTROL_FILE']+ " (control)." >> {output}
+		echo "Run with window size " + config['WINDOW_SIZE'] + " and stepsize " + config['STEP_SIZE'] + " at resolution " + config['RESOLUTION'] + "." >> {output}
+		echo "Run by " + $USER + " and finished at " $(date) + "." >> {output}
+		"""
+	

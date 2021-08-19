@@ -1,0 +1,12 @@
+REFERENCE_NAME: "hg19"
+WINDOW_SIZE: 3000000
+STEP_SIZE: 1000000
+RESOLUTION: "10Kb"
+SAMPLE: "test"
+SAMPLE_FILE: "../Processing/results/test/hic_format/test_KRnorm_hg19.hic"
+CONTROL: "Control"
+CONTROL_FILE:  "../Processing/results/control/hic_format/control_KRnorm_hg19.hic"
+N_PLOTS: 20
+OUTDIR: "results/test"
+SIM_THRESHOLD: 0.25
+Z_SIM_THRESHOLD: -0.5
